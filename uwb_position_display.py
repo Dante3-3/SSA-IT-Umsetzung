@@ -3,11 +3,10 @@ import turtle
 import cmath
 import socket
 import json
-import numpy as np
 
 # UDP-Konfiguration
 UDP_IP = "0.0.0.0"  # Hört auf allen Netzwerkschnittstellen
-UDP_PORT = 8080     # Muss mit dem ESP32 UDP-Port übereinstimmen
+UDP_PORT = 8080      # Muss mit dem ESP32 UDP-Port übereinstimmen
 
 # UDP-Socket erstellen und binden
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -103,15 +102,6 @@ def draw_uwb_tag(x, y, txt, t):
     fill_cycle(pos_x, pos_y, r, "blue", t)
     write_txt(pos_x, pos_y, f"{txt}: ({x},{y})", "black", t, f=('Arial', 16, 'normal'))
 
-def detect_outliers(data):
-    q1 = np.percentile(data, 25)
-    q3 = np.percentile(data, 75)
-    iqr = q3 - q1
-    lower_bound = q1 - 1.5 * iqr
-    upper_bound = q3 + 1.5 * iqr
-    inliers = [x for x in data if lower_bound <= x <= upper_bound]
-    return inliers
-
 def read_data():
     try:
         data, addr = sock.recvfrom(1024)  # Maximale Empfangsgröße 1024 Bytes
@@ -122,28 +112,13 @@ def read_data():
             uwb_data = json.loads(line)
             print(f"Received from {addr}: {uwb_data}")
             uwb_list = uwb_data.get("links", [])
-
-            # Extrahiere und konvertiere x- und y-Werte in float für Ausreißerfilterung
-            x_values = [float(pos.get("R", 0)) for pos in uwb_list if "R" in pos]
-            y_values = [float(pos.get("R", 0)) for pos in uwb_list if "R" in pos]
-
-            # Filtere x- und y-Werte, um Ausreißer zu entfernen
-            x_inliers = detect_outliers(x_values)
-            y_inliers = detect_outliers(y_values)
-
-            # Nur Positionen zurückgeben, die keine Ausreißer sind
-            filtered_uwb_list = [
-                pos for pos in uwb_list if float(pos.get("R", 0)) in x_inliers and float(pos.get("R", 0)) in y_inliers
-            ]
-            return filtered_uwb_list
-
         except json.JSONDecodeError:
             print(f"Received non-JSON data from {addr}: {line}")
-            return []
+
+        return uwb_list
     except Exception as e:
         print(f"Error receiving data: {e}")
         return []
-
 
 def tag_pos(a, b, c):
     if b == 0 or c == 0:
@@ -177,6 +152,7 @@ def main():
 
     while True:
         uwb_list = read_data()
+        print(uwb_list)
         node_count = 0
 
         for one in uwb_list:
@@ -193,6 +169,7 @@ def main():
                                 150, f"A1782({distance_a1_a2})", a2_range, t_a2)
                 node_count += 1
 
+        # Draw the third anchor as a boundary reference
         clean(t_a3)
         draw_uwb_anchor(-250, 150 - meter2pixel * distance_a1_a3, "A1783(0,5)", a3_range, t_a3)
 
