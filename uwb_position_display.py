@@ -3,12 +3,11 @@ import turtle
 import cmath
 import socket
 import json
-
 import numpy as np
 
 # UDP-Konfiguration
 UDP_IP = "0.0.0.0"  # Hört auf allen Netzwerkschnittstellen
-UDP_PORT = 8080      # Muss mit dem ESP32 UDP-Port übereinstimmen
+UDP_PORT = 8080     # Muss mit dem ESP32 UDP-Port übereinstimmen
 
 # UDP-Socket erstellen und binden
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -104,43 +103,43 @@ def draw_uwb_tag(x, y, txt, t):
     fill_cycle(pos_x, pos_y, r, "blue", t)
     write_txt(pos_x, pos_y, f"{txt}: ({x},{y})", "black", t, f=('Arial', 16, 'normal'))
 
-
-def detect_outliers_median_std(data, threshold=2):
-    median = np.median(data)
-    std_dev = np.std(data)
-    inliers = [x for x in data if abs(x - median) <= threshold * std_dev]
+def detect_outliers(data):
+    q1 = np.percentile(data, 25)
+    q3 = np.percentile(data, 75)
+    iqr = q3 - q1
+    lower_bound = q1 - 1.5 * iqr
+    upper_bound = q3 + 1.5 * iqr
+    inliers = [x for x in data if lower_bound <= x <= upper_bound]
     return inliers
-
 
 def read_data():
     try:
         data, addr = sock.recvfrom(1024)  # Maximale Empfangsgröße 1024 Bytes
         line = data.decode('utf-8')
-
         uwb_list = []
+
         try:
             uwb_data = json.loads(line)
             print(f"Received from {addr}: {uwb_data}")
-            # Extrahiere die Positionen, wenn sie im JSON-Datenformat "links" existieren
             uwb_list = uwb_data.get("links", [])
 
-            # Extrahiere x- und y-Werte separat
+            # Extrahiere x- und y-Werte für Ausreißerfilterung
             x_values = [pos[0] for pos in uwb_list]
             y_values = [pos[1] for pos in uwb_list]
 
-            # Filtere die Werte basierend auf Median und Standardabweichung
-            x_inliers = detect_outliers_median_std(x_values)
-            y_inliers = detect_outliers_median_std(y_values)
+            # Filtere x- und y-Werte
+            x_inliers = detect_outliers(x_values)
+            y_inliers = detect_outliers(y_values)
 
-            # Filtere Positionen basierend auf den gefilterten x- und y-Werten
+            # Nur Positionen zurückgeben, die keine Ausreißer sind
             filtered_uwb_list = [
                 pos for pos in uwb_list if pos[0] in x_inliers and pos[1] in y_inliers
             ]
+            return filtered_uwb_list
+
         except json.JSONDecodeError:
             print(f"Received non-JSON data from {addr}: {line}")
             return []
-
-        return filtered_uwb_list
     except Exception as e:
         print(f"Error receiving data: {e}")
         return []
@@ -159,14 +158,11 @@ def tag_pos(a, b, c):
 def uwb_range_offset(uwb_range):
     return uwb_range  # Placeholder für eventuelle Offset-Berechnungen
 
-
 def main():
     t_ui = turtle.Turtle()
     t_a1 = turtle.Turtle()
     t_a2 = turtle.Turtle()
     t_a3 = turtle.Turtle()
-
-    # Initialisiere alle Turtles
     turtle_init(t_ui)
     turtle_init(t_a1)
     turtle_init(t_a2)
@@ -174,21 +170,14 @@ def main():
 
     a1_range = 0.0
     a2_range = 0.0
-    a3_range = distance_a1_a3  # Konstante Distanz für die Begrenzungs-Anker
+    a3_range = distance_a1_a3  # Constant distance for the boundary anchor
 
-    # UI zeichnen
     draw_ui(t_ui)
 
     while True:
-        # Empfangene Daten lesen und filtern
         uwb_list = read_data()
-
-        if not uwb_list:  # Überprüfe, ob die Liste leer ist
-            continue  # Keine Daten zum Verarbeiten, also überspringe die Schleife
-
         node_count = 0
 
-        # Verarbeitung der gefilterten Daten
         for one in uwb_list:
             if one.get("A") == "1781":
                 clean(t_a1)
@@ -203,17 +192,15 @@ def main():
                                 150, f"A1782({distance_a1_a2})", a2_range, t_a2)
                 node_count += 1
 
-        # Zeichne den dritten Anker als Begrenzungsreferenz
         clean(t_a3)
         draw_uwb_anchor(-250, 150 - meter2pixel * distance_a1_a3, "A1783(0,5)", a3_range, t_a3)
 
-        # Wenn zwei Anker erkannt wurden, berechne die Position des Tags
         if node_count == 2:
             x, y = tag_pos(a2_range, a1_range, distance_a1_a2)
             print(f"Tag Position: ({x}, {y})")
             draw_uwb_tag(x, y, "TAG", t_a3)
 
-        time.sleep(0.1)  # Pause, um die Schleife nicht zu oft auszuführen
+        time.sleep(0.1)
 
     turtle.mainloop()
 
