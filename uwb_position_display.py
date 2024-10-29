@@ -123,17 +123,17 @@ def read_data():
             print(f"Received from {addr}: {uwb_data}")
             uwb_list = uwb_data.get("links", [])
 
-            # Extrahiere x- und y-Werte für Ausreißerfilterung
-            x_values = [pos[0] for pos in uwb_list]
-            y_values = [pos[1] for pos in uwb_list]
+            # Extrahiere und konvertiere x- und y-Werte in float für Ausreißerfilterung
+            x_values = [float(pos.get("R", 0)) for pos in uwb_list if "R" in pos]
+            y_values = [float(pos.get("R", 0)) for pos in uwb_list if "R" in pos]
 
-            # Filtere x- und y-Werte
+            # Filtere x- und y-Werte, um Ausreißer zu entfernen
             x_inliers = detect_outliers(x_values)
             y_inliers = detect_outliers(y_values)
 
             # Nur Positionen zurückgeben, die keine Ausreißer sind
             filtered_uwb_list = [
-                pos for pos in uwb_list if pos[0] in x_inliers and pos[1] in y_inliers
+                pos for pos in uwb_list if float(pos.get("R", 0)) in x_inliers and float(pos.get("R", 0)) in y_inliers
             ]
             return filtered_uwb_list
 
@@ -143,6 +143,7 @@ def read_data():
     except Exception as e:
         print(f"Error receiving data: {e}")
         return []
+
 
 def tag_pos(a, b, c):
     if b == 0 or c == 0:
