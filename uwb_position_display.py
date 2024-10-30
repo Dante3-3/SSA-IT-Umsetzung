@@ -3,6 +3,7 @@ import turtle
 import cmath
 import socket
 import json
+import math
 
 # UDP-Konfiguration
 UDP_IP = "0.0.0.0"  # Hört auf allen Netzwerkschnittstellen
@@ -14,9 +15,11 @@ sock.bind((UDP_IP, UDP_PORT))
 print(f"Listening on {UDP_IP}:{UDP_PORT}")
 
 distance_a1_a2 = 3.0
-distance_a1_a3 = 5.0  # Distance to the new anchor
 meter2pixel = 100
 range_offset = 0.9
+
+FIELD_WIDTH = 3.0
+FIELD_HEIGHT = 3.0
 
 def screen_init(width=1200, height=800, t=turtle):
     t.setup(width, height)
@@ -121,20 +124,49 @@ def read_data():
         return []
 
 def tag_pos(a, b, c):
+    # Überprüfen, ob b oder c gleich 0 sind, um Division durch 0 zu vermeiden
     if b == 0 or c == 0:
         print("Fehler: b oder c ist 0, Berechnung kann nicht durchgeführt werden.")
-        return 0, 0
+        return 0, 0  # Rückgabewerte, falls die Berechnung nicht möglich ist
 
+    # Berechnung des Cosinus des Winkels
     cos_a = (b**2 + c**2 - a**2) / (2 * b * c)
+
+    # Überprüfen, ob cos_a einen gültigen Bereich hat (-1 <= cos_a <= 1)
     cos_a = min(1, max(-1, cos_a))
+
+    # Berechnung der x- und y-Koordinaten
     x = b * cos_a
     y = b * cmath.sqrt(1 - cos_a**2)
+
     return round(x.real, 1), round(y.real, 1)
+
 
 def uwb_range_offset(uwb_range):
     return uwb_range  # Placeholder für eventuelle Offset-Berechnungen
 
+def is_out_of_bounds(x, y):
+    return x >= FIELD_WIDTH and y >= FIELD_HEIGHT
+
+
+def is_within_field(tag_x, tag_y):
+    # Berechnung der diagonalen Entfernungen zur oberen linken Ecke (0, FIELD_HEIGHT)
+    dist_to_top_left = math.sqrt(tag_x ** 2 + (tag_y - FIELD_HEIGHT) ** 2) - 0.8
+
+    # Berechnung der diagonalen Entfernungen zur oberen rechten Ecke (FIELD_WIDTH, FIELD_HEIGHT)
+    dist_to_top_right = math.sqrt((tag_x - FIELD_WIDTH) ** 2 + (tag_y - FIELD_HEIGHT) ** 2) - 0.8
+
+    # Berechnung der maximalen zulässigen Distanz innerhalb des Spielfelds
+    max_dist_to_top_left = math.sqrt(FIELD_WIDTH ** 2 + FIELD_HEIGHT ** 2) - 0.8
+    max_dist_to_top_right = max_dist_to_top_left  # Gleiche Diagonale für beide Ecken
+
+    # Überprüfen, ob der Tag innerhalb der Spielfeldgrenzen liegt
+    within_field = dist_to_top_left <= max_dist_to_top_left and dist_to_top_right <= max_dist_to_top_right
+
+    return within_field
+
 def main():
+    # Initialisierung der Turtle-Turtles
     t_ui = turtle.Turtle()
     t_a1 = turtle.Turtle()
     t_a2 = turtle.Turtle()
@@ -146,39 +178,38 @@ def main():
 
     a1_range = 0.0
     a2_range = 0.0
-    a3_range = distance_a1_a3  # Constant distance for the boundary anchor
 
     draw_ui(t_ui)
 
     while True:
         uwb_list = read_data()
-        print(uwb_list)
         node_count = 0
 
         for one in uwb_list:
             if one.get("A") == "1781":
                 clean(t_a1)
                 a1_range = uwb_range_offset(float(one.get("R", 0)))
-                draw_uwb_anchor(-250, 150, "A1781(0,0)", a1_range, t_a1)
+                draw_uwb_anchor(-250, 150, "A1782(0,0)", a1_range, t_a1)
                 node_count += 1
 
             elif one.get("A") == "1782":
                 clean(t_a2)
                 a2_range = uwb_range_offset(float(one.get("R", 0)))
                 draw_uwb_anchor(-250 + meter2pixel * distance_a1_a2,
-                                150, f"A1782({distance_a1_a2})", a2_range, t_a2)
+                                150, f"A1783({distance_a1_a2})", a2_range, t_a2)
                 node_count += 1
-
-        # Draw the third anchor as a boundary reference
-        clean(t_a3)
-        draw_uwb_anchor(-250, 150 - meter2pixel * distance_a1_a3, "A1783(0,5)", a3_range, t_a3)
 
         if node_count == 2:
             x, y = tag_pos(a2_range, a1_range, distance_a1_a2)
             print(f"Tag Position: ({x}, {y})")
+            if is_out_of_bounds(x, y):
+                print("Du bist im Ausss!")
+            if is_within_field(x, y) == False:
+                print("AUSSSSS!")
+            clean(t_a3)
             draw_uwb_tag(x, y, "TAG", t_a3)
 
-        time.sleep(0.1)
+        time.sleep(0.1)  # Kurze Pause, um CPU-Auslastung zu reduzieren
 
     turtle.mainloop()
 
