@@ -5,6 +5,8 @@ import socket
 import json
 import math
 
+import numpy
+
 # UDP-Konfiguration
 UDP_IP = "0.0.0.0"  # Hört auf allen Netzwerkschnittstellen
 UDP_PORT = 8080      # Muss mit dem ESP32 UDP-Port übereinstimmen
@@ -18,8 +20,8 @@ distance_a1_a2 = 3.0
 meter2pixel = 100
 range_offset = 0.9
 
-FIELD_WIDTH = 3.0
-FIELD_HEIGHT = 3.0
+FIELD_WIDTH = 3.2
+FIELD_HEIGHT = 5.0
 
 def screen_init(width=1200, height=800, t=turtle):
     t.setup(width, height)
@@ -151,19 +153,44 @@ def is_out_of_bounds(x, y):
 
 def is_within_field(tag_x, tag_y):
     # Berechnung der diagonalen Entfernungen zur oberen linken Ecke (0, FIELD_HEIGHT)
-    dist_to_top_left = math.sqrt(tag_x ** 2 + (tag_y - FIELD_HEIGHT) ** 2) - 0.8
+    dist_to_top_left = math.sqrt(tag_x ** 2 + (tag_y - FIELD_HEIGHT) ** 2)
 
     # Berechnung der diagonalen Entfernungen zur oberen rechten Ecke (FIELD_WIDTH, FIELD_HEIGHT)
-    dist_to_top_right = math.sqrt((tag_x - FIELD_WIDTH) ** 2 + (tag_y - FIELD_HEIGHT) ** 2) - 0.8
+    dist_to_top_right = math.sqrt((tag_x - FIELD_WIDTH) ** 2 + (tag_y - FIELD_HEIGHT) ** 2)
 
     # Berechnung der maximalen zulässigen Distanz innerhalb des Spielfelds
-    max_dist_to_top_left = math.sqrt(FIELD_WIDTH ** 2 + FIELD_HEIGHT ** 2) - 0.8
+    max_dist_to_top_left = math.sqrt(FIELD_WIDTH ** 2 + FIELD_HEIGHT ** 2)
     max_dist_to_top_right = max_dist_to_top_left  # Gleiche Diagonale für beide Ecken
 
     # Überprüfen, ob der Tag innerhalb der Spielfeldgrenzen liegt
     within_field = dist_to_top_left <= max_dist_to_top_left and dist_to_top_right <= max_dist_to_top_right
 
     return within_field
+
+
+import numpy as np
+
+
+def aus_vorne(x, y):
+    # Berechnung von cos(beta) und Begrenzung des Wertes auf den Bereich [-1, 1]
+    try:
+        cos_beta = (-x ** 2 + y ** 2 + FIELD_WIDTH ** 2) / (2 * y * FIELD_WIDTH)
+    except:
+        return False
+    cos_beta = np.clip(cos_beta, -1.0, 1.0)  # Sicherstellen, dass der Wert im Bereich [-1, 1] liegt
+
+    # Berechnung des Winkels beta in Radiant
+    betaWinkel = np.arccos(cos_beta)
+
+    # Berechnung der Höhe hc
+    hc = x * np.sin(betaWinkel)
+
+    # Überprüfung, ob hc größer als die Spielfeldhöhe ist
+    return hc > FIELD_HEIGHT
+
+def sendArduinoMessage(value):
+    sock.sendto(value.encode(), (UDP_IP, UDP_PORT))
+
 
 def main():
     # Initialisierung der Turtle-Turtles
@@ -201,11 +228,10 @@ def main():
 
         if node_count == 2:
             x, y = tag_pos(a2_range, a1_range, distance_a1_a2)
-            print(f"Tag Position: ({x}, {y})")
-            if is_out_of_bounds(x, y):
-                print("Du bist im Ausss!")
-            if is_within_field(x, y) == False:
-                print("AUSSSSS!")
+            if is_out_of_bounds(a1_range, a2_range):
+                sendArduinoMessage("draußen")
+            if is_within_field(a1_range, a2_range) == False:
+                sendArduinoMessage("draußen")
             clean(t_a3)
             draw_uwb_tag(x, y, "TAG", t_a3)
 
