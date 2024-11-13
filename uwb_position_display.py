@@ -20,7 +20,7 @@ distance_a1_a2 = 3.0
 meter2pixel = 100
 range_offset = 0.9
 
-FIELD_WIDTH = 3.2
+FIELD_WIDTH = 3.0
 FIELD_HEIGHT = 5.0
 
 def screen_init(width=1200, height=800, t=turtle):
@@ -189,7 +189,7 @@ def aus_vorne(x, y):
     return hc > FIELD_HEIGHT
 
 def sendArduinoMessage(value):
-    sock.sendto(value.encode(), (UDP_IP, UDP_PORT))
+    sock.sendto(value.encode(), ("172.20.10.2", UDP_PORT))
 
 
 def main():
@@ -230,8 +230,12 @@ def main():
             x, y = tag_pos(a2_range, a1_range, distance_a1_a2)
             if is_out_of_bounds(a1_range, a2_range):
                 sendArduinoMessage("draußen")
+            else:
+                sendArduinoMessage("drinnen")
             if is_within_field(a1_range, a2_range) == False:
                 sendArduinoMessage("draußen")
+            else:
+                sendArduinoMessage("drinnen")
             clean(t_a3)
             draw_uwb_tag(x, y, "TAG", t_a3)
 
