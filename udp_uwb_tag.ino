@@ -15,8 +15,18 @@ For ESP32 UWB or ESP32 UWB Pro
 #define PIN_RST 27
 #define PIN_IRQ 34
 
-const char *ssid = "iPhone von Sandip";
-const char *password = "chillo123";
+/**
+ * Gustav sein Code
+*/
+#define VIBRO1 12
+
+TaskHandle_t Task1;
+
+int counter = 0;
+
+
+const char *ssid = "iPhone von Toma";
+const char *password = "vaskoaki";
 const char *host = "172.20.10.3"; // Python Server IP
 const int udp_port = 8080;        // UDP Port für Kommunikation (Python auch auf diesen Port setzen)
 
@@ -29,6 +39,9 @@ String all_json = "";
 void setup()
 {
     Serial.begin(115200);
+
+    //Von G
+    pinMode(VIBRO1, OUTPUT);
 
     // WiFi-Verbindung herstellen
     WiFi.mode(WIFI_STA);
@@ -55,17 +68,70 @@ void setup()
 
     // UWB-Daten initialisieren
     uwb_data = init_link();
+
+    udp.begin(udp_port);
 }
 
 void loop()
 {
     DW1000Ranging.loop();
-    if ((millis() - runtime) > 150)
+    if ((millis() - runtime) > 1000)
     {
         make_link_json(uwb_data, &all_json);
         send_udp(&all_json);
         runtime = millis();
     }
+
+    int packetSize = udp.parsePacket();
+    if (packetSize) {
+        char incomingPacket[255];
+        int len = udp.read(incomingPacket, 255);
+        incomingPacket[len] = 0;  // Null-terminate the packet
+
+        String message = String(incomingPacket);
+        Serial.println("Received: " + message);
+
+        if(message == "draußen"){
+          Serial.println("Du bist draußen");
+          //Von G
+          vibrieren(12, true);
+        } else if(message == "drinnen"){
+          Serial.println("Wieder Drinnen");
+          vibrieren(12, false);
+        } else {
+          Serial.println("Unbekannte Nachricht");
+        }
+    }
+}
+
+void vibrieren(byte pin, boolean aktiv) {
+  if(!Task1) {
+    xTaskCreatePinnedToCore(
+    codeVibrieren,
+    "vibrieren1task",
+    1000,
+    NULL,
+    1,
+    &Task1,
+    0);
+    vTaskSuspend(Task1);
+  }
+  if(aktiv) {
+    vTaskResume(Task1);
+  } else {
+    vTaskSuspend(Task1);
+    digitalWrite(VIBRO1, LOW);
+  }
+}
+
+void codeVibrieren( void * parameter )
+{
+  Serial.println("Vibration...");
+  for(;;) {
+    digitalWrite(VIBRO1, HIGH);
+    delay(50);
+  }
+
 }
 
 void newRange()
