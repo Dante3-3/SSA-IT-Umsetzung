@@ -228,11 +228,7 @@ def main():
 
         if node_count == 2:
             x, y = tag_pos(a2_range, a1_range, distance_a1_a2)
-            if is_out_of_bounds(a1_range, a2_range):
-                sendArduinoMessage("draußen")
-            else:
-                sendArduinoMessage("drinnen")
-            if is_within_field(a1_range, a2_range) == False:
+            if is_out_of_bounds(a1_range, a2_range) or is_within_field(a1_range, a2_range):
                 sendArduinoMessage("draußen")
             else:
                 sendArduinoMessage("drinnen")
