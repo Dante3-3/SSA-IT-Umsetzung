@@ -1,9 +1,6 @@
 #include <SPI.h>
 #include <DW1000Ranging.h>
 #include <WiFi.h>
-//#include <WiFiUdp.h>
-#include "link.h"
-#include <math.h>
 #include <esp_now.h>
 
 #define SPI_SCK 18
@@ -11,70 +8,55 @@
 #define SPI_MOSI 23
 #define DW_CS 4
 #define PIN_RST 27
-#define PIN_IRQ 34
+#define PIN_IRQ 2  // Ändere auf GPIO 2
 
-#define FIELD_WIDTH 3.0  // Spielfeldbreite in Metern
-#define FIELD_HEIGHT FIELD_WIDTH // Spielfeldhöhe in Metern
+double FIELD_WIDTH = 3.0;
+#define FIELD_HEIGHT FIELD_WIDTH
 #define DISTANCE_A1_A2 3.0
-
 #define VIBRO1 12
 
-// Define a data structure
 typedef struct struct_message {
   int b;
 } struct_message;
- 
-// Create a structured object
+
 struct_message myData;
+SPIClass hspi(HSPI); // HSPI für DW1000
 
-// Callback function executed when data is received
 void OnDataRecv(const esp_now_recv_info_t *recv_info, const uint8_t *incomingData, int len) {
-  memcpy(&myData, incomingData, sizeof(myData));
+    memcpy(&myData, incomingData, sizeof(myData));
 
-  // MAC-Adresse extrahieren
-  const uint8_t *mac = recv_info->src_addr;
+    Serial.print("Data received: ");
+    Serial.println(len);
+    Serial.print("Integer Value: ");
+    Serial.println(myData.b);
 
-  Serial.print("Data received: ");
-  Serial.println(len);
-
-  Serial.print("Integer Value: ");
-  Serial.println(myData.b);
-  
-  // Falls du die MAC-Adresse ausgeben möchtest:
-  Serial.print("Message received from: ");
-  for (int i = 0; i < 6; i++) {
-      Serial.printf("%02X", mac[i]);
-      if (i < 5) Serial.print(":");
-  }
-  Serial.println();
+    if (myData.b == 1) {
+        FIELD_WIDTH += 1.0;
+        Serial.print("FIELD_WIDTH erhöht: ");
+        Serial.println(FIELD_WIDTH);
+    }
 }
-
 
 void setup() {
     Serial.begin(115200);
-
     pinMode(VIBRO1, OUTPUT);
 
-    // SPI und UWB initialisieren
-    SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
+    hspi.begin(SPI_SCK, SPI_MISO, SPI_MOSI, DW_CS);
     DW1000Ranging.initCommunication(PIN_RST, DW_CS, PIN_IRQ);
     DW1000Ranging.attachNewRange(newRange);
     DW1000Ranging.attachNewDevice(newDevice);
     DW1000Ranging.attachInactiveDevice(inactiveDevice);
-
-    // UWB als Tag starten
     DW1000Ranging.startAsTag("7D:00:22:EA:82:60:3B:9C", DW1000.MODE_LONGDATA_RANGE_LOWPOWER);
 
-    // Set ESP32 as a Wi-Fi Station
     WiFi.mode(WIFI_STA);
- 
-    // Initilize ESP-NOW
+    WiFi.setSleep(false);
+    WiFi.setChannel(1);
+
     if (esp_now_init() != ESP_OK) {
-      Serial.println("Error initializing ESP-NOW");
-      return;
+        Serial.println("Error initializing ESP-NOW");
+        return;
     }
-  
-    // Register callback function
+
     esp_now_register_recv_cb(OnDataRecv);
 }
 
@@ -83,9 +65,11 @@ void loop() {
 }
 
 void newRange() {
+    hspi.beginTransaction(SPISettings(16000000, MSBFIRST, SPI_MODE0));
     double a2_range = DW1000Ranging.getDistantDevice()->getRange();
-    double a1_range = DISTANCE_A1_A2; // Der Abstand zum ersten Anker wird als Konstante festgelegt
+    hspi.endTransaction();
 
+    double a1_range = DISTANCE_A1_A2;
     double tag_x = 0, tag_y = 0;
 
     if (a2_range > 0 && a1_range > 0) {
@@ -96,32 +80,23 @@ void newRange() {
         Serial.print(", y = ");
         Serial.println(tag_y);
 
-        // Überprüfen, ob der Tag außerhalb des Spielfelds ist
         if (is_out_of_bounds(tag_x, tag_y)) {
-            Serial.println("Der Tag ist außerhalb des Spielfelds.");
+            Serial.println("Tag ist außerhalb des Spielfelds.");
             vibrieren(VIBRO1, true);
         } else {
-            Serial.println("Der Tag ist innerhalb des Spielfelds.");
+            Serial.println("Tag ist innerhalb des Spielfelds.");
             vibrieren(VIBRO1, false);
         }
     } else {
-        Serial.println("Ungültige Entfernungsdaten, keine Berechnung der Position möglich.");
+        Serial.println("Ungültige Entfernungsdaten.");
     }
 }
 
 void calculateTagPosition(double a, double b, double c, double *x, double *y) {
-    if (b == 0 || c == 0) {
-        Serial.println("Fehler: b oder c ist 0, Berechnung nicht möglich.");
-        *x = 0;
-        *y = 0;
-        return;
-    }
-
     double cos_a = (b * b + c * c - a * a) / (2 * b * c);
-    cos_a = fmax(-1.0, fmin(1.0, cos_a)); // Begrenzen auf [-1, 1]
-
+    cos_a = fmax(-1.0, fmin(1.0, cos_a));
     *x = b * cos_a;
-    *y = sqrt(fmax(0.0, b * b - (*x) * (*x))); // Sicherstellen, dass der Wurzelwert positiv ist
+    *y = sqrt(fmax(0.0, b * b - (*x) * (*x)));
 }
 
 bool is_out_of_bounds(double tag_x, double tag_y) {
@@ -129,18 +104,14 @@ bool is_out_of_bounds(double tag_x, double tag_y) {
 }
 
 void vibrieren(byte pin, boolean aktiv) {
-    static bool is_vibrating = false;
-
-    if (aktiv && !is_vibrating) {
-        is_vibrating = true;
-        for (int i = 0; i < 10; i++) { // Längere und intensivere Vibration
+    if (aktiv) {
+        for (int i = 0; i < 10; i++) {
             digitalWrite(pin, HIGH);
-            delay(30); // Kürzeres Intervall für intensivere Vibration
+            delay(30);
             digitalWrite(pin, LOW);
             delay(20);
         }
-        is_vibrating = false;
-    } else if (!aktiv) {
+    } else {
         digitalWrite(pin, LOW);
     }
 }
